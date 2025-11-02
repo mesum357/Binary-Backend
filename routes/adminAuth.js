@@ -84,15 +84,32 @@ router.post('/signin', (req, res, next) => {
         sessionId: req.sessionID,
         cookie: req.headers.cookie,
         hasSession: !!req.session,
+        origin: req.headers.origin,
       });
       
-      return res.status(200).json({
-        success: true,
-        admin: {
-          _id: admin._id,
-          fullName: admin.fullName,
-          email: admin.email,
-        },
+      // Ensure session is saved before sending response
+      req.session.save((saveErr) => {
+        if (saveErr) {
+          console.error('[AUTH BACKEND] Session save error:', saveErr);
+          return res.status(500).json({ 
+            success: false, 
+            message: 'Error saving session' 
+          });
+        }
+        
+        // Log cookie that will be sent
+        const setCookieHeader = res.getHeader('Set-Cookie');
+        console.log('[AUTH BACKEND] Set-Cookie header:', setCookieHeader);
+        
+        // Return response after session is saved
+        res.status(200).json({
+          success: true,
+          admin: {
+            _id: admin._id,
+            fullName: admin.fullName,
+            email: admin.email,
+          },
+        });
       });
     });
   })(req, res, next);
