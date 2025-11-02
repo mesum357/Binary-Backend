@@ -1,6 +1,7 @@
 import express from 'express';
 import passport from 'passport';
 import Admin from '../models/Admin.js';
+import { generateAdminToken } from '../utils/jwt.js';
 
 const router = express.Router();
 
@@ -29,19 +30,17 @@ router.post('/signup', async (req, res) => {
     // Create admin
     const admin = await Admin.create({ fullName, email, password });
 
-    // Auto login after signup
-    req.login(admin, (err) => {
-      if (err) {
-        return res.status(500).json({ success: false, message: 'Error during signup' });
-      }
-      return res.status(201).json({
-        success: true,
-        admin: {
-          _id: admin._id,
-          fullName: admin.fullName,
-          email: admin.email,
-        },
-      });
+    // Generate JWT token for auto login after signup
+    const token = generateAdminToken(admin);
+    
+    return res.status(201).json({
+      success: true,
+      token, // JWT token for frontend to store
+      admin: {
+        _id: admin._id,
+        fullName: admin.fullName,
+        email: admin.email,
+      },
     });
   } catch (error) {
     console.error('Admin signup error:', error);
@@ -69,104 +68,146 @@ router.post('/signin', (req, res, next) => {
       });
     }
 
-    req.login(admin, (err) => {
-      if (err) {
-        console.error('[AUTH BACKEND] Login error:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Error during signin' 
-        });
-      }
-      
-      // Log session info for debugging
-      console.log('[AUTH BACKEND] Admin logged in:', {
-        adminId: admin._id,
-        sessionId: req.sessionID,
-        cookie: req.headers.cookie,
-        hasSession: !!req.session,
-        origin: req.headers.origin,
-      });
-      
-      // Ensure session is saved before sending response
-      req.session.save((saveErr) => {
-        if (saveErr) {
-          console.error('[AUTH BACKEND] Session save error:', saveErr);
-          return res.status(500).json({ 
-            success: false, 
-            message: 'Error saving session' 
-          });
-        }
-        
-        // Log cookie that will be sent
-        const setCookieHeader = res.getHeader('Set-Cookie');
-        console.log('[AUTH BACKEND] Set-Cookie header:', setCookieHeader);
-        console.log('[AUTH BACKEND] Session config check:', {
-          sessionID: req.sessionID,
-          hasSession: !!req.session,
-          cookieSecure: req.session.cookie?.secure,
-          cookieSameSite: req.session.cookie?.sameSite,
-          cookieHttpOnly: req.session.cookie?.httpOnly,
-        });
-        
-        // Ensure CORS headers are set
-        res.setHeader('Access-Control-Allow-Credentials', 'true');
-        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-        
-        // Return response after session is saved
-        res.status(200).json({
-          success: true,
-          admin: {
-            _id: admin._id,
-            fullName: admin.fullName,
-            email: admin.email,
-          },
-        });
-      });
+    // Generate JWT token instead of using session cookies
+    console.log('[AUTH BACKEND] Sign-in successful, generating JWT token...');
+    const token = generateAdminToken(admin);
+    
+    console.log('[AUTH BACKEND] Admin logged in (JWT):', {
+      adminId: admin._id,
+      email: admin.email,
+      tokenGenerated: !!token,
+      tokenLength: token?.length || 0,
+      responseOrigin: req.headers.origin,
     });
+    
+    // Return JWT token in response
+    const responseData = {
+      success: true,
+      token, // JWT token for frontend to store
+      admin: {
+        _id: admin._id,
+        fullName: admin.fullName,
+        email: admin.email,
+      },
+    };
+    
+    console.log('[AUTH BACKEND] Sending sign-in response:', {
+      hasToken: !!responseData.token,
+      hasAdmin: !!responseData.admin,
+      adminId: responseData.admin._id,
+      statusCode: 200,
+    });
+    
+    res.status(200).json(responseData);
   })(req, res, next);
 });
 
-// Check Admin Auth Status
-router.get('/me', (req, res) => {
-  // Debug logging
-  console.log('[AUTH BACKEND] /me check:', {
-    isAuthenticated: req.isAuthenticated(),
-    hasUser: !!req.user,
-    userModel: req.user?.constructor?.modelName,
-    sessionID: req.sessionID,
-    cookie: req.headers.cookie,
+// Check Admin Auth Status (JWT-based)
+router.get('/me', async (req, res) => {
+  console.log('[AUTH BACKEND] /me endpoint called:', {
+    method: req.method,
+    path: req.path,
     origin: req.headers.origin,
+    userAgent: req.headers['user-agent'],
+    authorizationHeader: req.headers.authorization ? 'Present' : 'Missing',
+    authorizationValue: req.headers.authorization ? req.headers.authorization.substring(0, 20) + '...' : 'N/A',
+    allHeaders: Object.keys(req.headers),
   });
   
-  if (req.isAuthenticated() && req.user && req.user.constructor.modelName === 'Admin') {
+  try {
+    // Get token from Authorization header
+    const authHeader = req.headers.authorization;
+    
+    console.log('[AUTH BACKEND] /me - Authorization header check:', {
+      hasHeader: !!authHeader,
+      headerLength: authHeader?.length || 0,
+      startsWithBearer: authHeader?.startsWith('Bearer ') || false,
+      fullHeader: authHeader ? authHeader.substring(0, 50) + '...' : 'undefined',
+    });
+    
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.warn('[AUTH BACKEND] /me - No valid token provided');
+      return res.status(401).json({ 
+        success: false, 
+        message: 'No token provided' 
+      });
+    }
+    
+    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    
+    console.log('[AUTH BACKEND] /me - Extracted token:', {
+      tokenLength: token.length,
+      tokenPrefix: token.substring(0, 20) + '...',
+    });
+    
+    // Verify token
+    const { verifyToken } = await import('../utils/jwt.js');
+    const decoded = verifyToken(token);
+    
+    console.log('[AUTH BACKEND] /me - Token decoded:', {
+      decodedId: decoded.id,
+      decodedEmail: decoded.email,
+      decodedType: decoded.type,
+    });
+    
+    if (decoded.type !== 'admin') {
+      console.warn('[AUTH BACKEND] /me - Invalid token type:', decoded.type);
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Invalid token type' 
+      });
+    }
+    
+    // Find admin from token
+    const admin = await Admin.findById(decoded.id);
+    
+    console.log('[AUTH BACKEND] /me - Admin lookup:', {
+      adminId: decoded.id,
+      adminFound: !!admin,
+      adminEmail: admin?.email,
+    });
+    
+    if (!admin) {
+      console.warn('[AUTH BACKEND] /me - Admin not found:', decoded.id);
+      return res.status(401).json({ 
+        success: false, 
+        message: 'Admin not found' 
+      });
+    }
+    
+    console.log('[AUTH BACKEND] /me - Success:', {
+      adminId: admin._id,
+      email: admin.email,
+    });
+    
     return res.status(200).json({
       success: true,
       admin: {
-        _id: req.user._id,
-        fullName: req.user.fullName,
-        email: req.user.email,
+        _id: admin._id,
+        fullName: admin.fullName,
+        email: admin.email,
       },
     });
+  } catch (error) {
+    console.error('[AUTH BACKEND] /me error:', {
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+    });
+    return res.status(401).json({ 
+      success: false, 
+      message: error.message || 'Invalid or expired token' 
+    });
   }
-  return res.status(401).json({ 
-    success: false, 
-    message: 'Not authenticated as admin' 
-  });
 });
 
-// Admin Logout
+// Admin Logout (JWT-based - client removes token)
 router.post('/logout', (req, res) => {
-  req.logout((err) => {
-    if (err) {
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Error during logout' 
-      });
-    }
-    return res.status(200).json({ 
-      success: true, 
-      message: 'Logged out successfully' 
-    });
+  // With JWT, logout is handled on client side by removing token
+  // This endpoint is kept for compatibility
+  return res.status(200).json({ 
+    success: true, 
+    message: 'Logged out successfully' 
   });
 });
 
