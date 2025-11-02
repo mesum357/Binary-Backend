@@ -71,11 +71,21 @@ router.post('/signin', (req, res, next) => {
 
     req.login(admin, (err) => {
       if (err) {
+        console.error('[AUTH BACKEND] Login error:', err);
         return res.status(500).json({ 
           success: false, 
           message: 'Error during signin' 
         });
       }
+      
+      // Log session info for debugging
+      console.log('[AUTH BACKEND] Admin logged in:', {
+        adminId: admin._id,
+        sessionId: req.sessionID,
+        cookie: req.headers.cookie,
+        hasSession: !!req.session,
+      });
+      
       return res.status(200).json({
         success: true,
         admin: {
@@ -90,6 +100,16 @@ router.post('/signin', (req, res, next) => {
 
 // Check Admin Auth Status
 router.get('/me', (req, res) => {
+  // Debug logging
+  console.log('[AUTH BACKEND] /me check:', {
+    isAuthenticated: req.isAuthenticated(),
+    hasUser: !!req.user,
+    userModel: req.user?.constructor?.modelName,
+    sessionID: req.sessionID,
+    cookie: req.headers.cookie,
+    origin: req.headers.origin,
+  });
+  
   if (req.isAuthenticated() && req.user && req.user.constructor.modelName === 'Admin') {
     return res.status(200).json({
       success: true,

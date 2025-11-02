@@ -103,11 +103,15 @@ app.use(
     secret: process.env.SESSION_SECRET || 'your-super-secret-session-key',
     resave: false,
     saveUninitialized: false,
+    name: 'connect.sid', // Explicit session name
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production', // Must be true with sameSite: 'none'
+      // For cross-origin on Render (different subdomains), use 'none' with secure: true
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+      // Ensure domain isn't set (let browser handle it)
+      domain: undefined,
     },
   })
 );
