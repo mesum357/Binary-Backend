@@ -39,8 +39,10 @@ cp .env.example .env
 MONGODB_URI=mongodb://localhost:27017/binary_hub
 PORT=5000
 SESSION_SECRET=your-super-secret-session-key-change-this-in-production
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=http://localhost:5173,http://localhost:8080
 ```
+
+**Note**: For production deployment on Render, see [ENVIRONMENT_VARIABLES.md](./ENVIRONMENT_VARIABLES.md) and [CORS_FIX.md](./CORS_FIX.md) for detailed environment variable setup.
 
 ### Running the Server
 

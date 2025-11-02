@@ -35,15 +35,32 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static files from public directory
 app.use('/uploads', express.static(join(__dirname, 'public', 'uploads')));
 
-// CORS configuration - Allow multiple origins in development
+// CORS configuration - Allow multiple origins
+const defaultOrigins = [
+  'http://localhost:5173', // Vite dev server
+  'http://localhost:8080', // Admin panel dev
+  'http://localhost:3000', // Alternative dev port
+];
+
+// Parse FRONTEND_URL environment variable (comma-separated list)
 const allowedOrigins = process.env.FRONTEND_URL 
-  ? process.env.FRONTEND_URL.split(',').map(url => url.trim())
-  : ['http://localhost:5173', 'http://localhost:8080', 'http://localhost:3000'];
+  ? [
+      ...process.env.FRONTEND_URL.split(',').map(url => url.trim()),
+      ...defaultOrigins // Always include localhost for development
+    ]
+  : defaultOrigins;
+
+// Log allowed origins in production for debugging
+if (process.env.NODE_ENV === 'production') {
+  console.log('Allowed CORS origins:', allowedOrigins);
+}
 
 const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
+    // Allow requests with no origin (like mobile apps or curl requests, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
     
     // In development, allow all localhost origins
     if (process.env.NODE_ENV !== 'production') {
@@ -52,14 +69,30 @@ const corsOptions = {
       }
     }
     
-    // Check against allowed origins
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Check against allowed origins (case-insensitive comparison of hostname)
+    const originUrl = new URL(origin);
+    const isAllowed = allowedOrigins.some(allowedOrigin => {
+      if (allowedOrigin.includes('localhost')) {
+        return originUrl.hostname === 'localhost' || originUrl.hostname === '127.0.0.1';
+      }
+      try {
+        const allowedUrl = new URL(allowedOrigin);
+        return originUrl.origin === allowedUrl.origin;
+      } catch {
+        return origin === allowedOrigin;
+      }
+    });
+    
+    if (isAllowed) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      console.warn(`CORS blocked origin: ${origin}. Allowed origins:`, allowedOrigins);
+      callback(new Error(`Not allowed by CORS: ${origin}`));
     }
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
 app.use(cors(corsOptions));
