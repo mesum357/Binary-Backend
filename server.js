@@ -98,23 +98,38 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 // Session configuration
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'your-super-secret-session-key',
-    resave: false,
-    saveUninitialized: false,
-    name: 'connect.sid', // Explicit session name
-    cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production', // Must be true with sameSite: 'none'
-      // For cross-origin on Render (different subdomains), use 'none' with secure: true
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      // Ensure domain isn't set (let browser handle it)
-      domain: undefined,
-    },
-  })
-);
+// IMPORTANT: For cross-origin cookies on Render, we need sameSite: 'none' with secure: true
+const sessionConfig = {
+  secret: process.env.SESSION_SECRET || 'your-super-secret-session-key',
+  resave: false,
+  saveUninitialized: false,
+  name: 'connect.sid', // Explicit session name
+  cookie: {
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production', // Must be true with sameSite: 'none'
+    // For cross-origin on Render (different subdomains), use 'none' with secure: true
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    // Ensure domain isn't set (let browser handle it)
+    // DO NOT set domain - let browser handle it for cross-origin
+    path: '/', // Explicit path
+  },
+};
+
+// Log session config in production for debugging
+if (process.env.NODE_ENV === 'production') {
+  console.log('[SESSION CONFIG] Session configuration:', {
+    secure: sessionConfig.cookie.secure,
+    sameSite: sessionConfig.cookie.sameSite,
+    httpOnly: sessionConfig.cookie.httpOnly,
+    domain: sessionConfig.cookie.domain,
+    path: sessionConfig.cookie.path,
+    maxAge: sessionConfig.cookie.maxAge,
+    NODE_ENV: process.env.NODE_ENV,
+  });
+}
+
+app.use(session(sessionConfig));
 
 // Initialize Passport
 app.use(passport.initialize());

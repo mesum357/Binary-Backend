@@ -100,6 +100,17 @@ router.post('/signin', (req, res, next) => {
         // Log cookie that will be sent
         const setCookieHeader = res.getHeader('Set-Cookie');
         console.log('[AUTH BACKEND] Set-Cookie header:', setCookieHeader);
+        console.log('[AUTH BACKEND] Session config check:', {
+          sessionID: req.sessionID,
+          hasSession: !!req.session,
+          cookieSecure: req.session.cookie?.secure,
+          cookieSameSite: req.session.cookie?.sameSite,
+          cookieHttpOnly: req.session.cookie?.httpOnly,
+        });
+        
+        // Ensure CORS headers are set
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
         
         // Return response after session is saved
         res.status(200).json({
